@@ -39,21 +39,30 @@ jobs:
       - name: Install Pulumi CLI
         uses: pulumi/actions@v5
 
+      # Install dependencies
       - name: Install Python dependencies
         working-directory: ./infra-pulumi
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Ensure pulumi-aws installed
-        working-directory: ./infra-pulumi
-        run: pip install pulumi-aws
+      # Debug requirements
+      - name: Debug requirements file
+        run: |
+          echo "===== REQUIREMENTS FILE ====="
+          cat infra-pulumi/requirements.txt
 
+      # Clean Pulumi venv
+      - name: Clean Pulumi venv
+        working-directory: ./infra-pulumi
+        run: rm -rf venv
+
+      # Run Pulumi
       - name: Run Pulumi Up
         working-directory: ./infra-pulumi
         env:
           PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
-          PYTHONPATH: .
+          PULUMI_PYTHON_CMD: python3
         run: |
           pulumi stack select dev --create
           pulumi up --yes --skip-preview
@@ -88,12 +97,23 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      # ✅ FIXED ECR LOGIN
       - name: Login to ECR + set tag
         run: |
-          ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
-          echo "ECR_REGISTRY=${ACCOUNT}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com" >> $GITHUB_ENV
-          aws ecr get-login-password | docker login --username AWS --password-stdin $ECR_REGISTRY
-          echo "IMAGE_TAG=${GITHUB_SHA::8}" >> $GITHUB_ENV
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          REGION=${{ env.AWS_REGION }}
+
+          echo "ACCOUNT_ID=$ACCOUNT_ID"
+          echo "REGION=$REGION"
+
+          ECR_REGISTRY=${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com
+          echo "ECR_REGISTRY=$ECR_REGISTRY" >> $GITHUB_ENV
+
+          aws ecr get-login-password --region $REGION | \
+          docker login --username AWS --password-stdin $ECR_REGISTRY
+
+          IMAGE_TAG=${GITHUB_SHA::8}
+          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
 
       - name: Build & push backend
         run: |
